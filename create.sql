@@ -159,6 +159,8 @@ BEGIN
                     OR [price] IS NULL
                     OR [cost] < 0
                     OR [price] < 0
+                    OR [name] IS NULL
+                    OR [category] IS NULL
                   )
     )
     BEGIN
@@ -170,6 +172,14 @@ BEGIN
         UPDATE [h5].[dimProduct_stg]
         SET [price] = 0
         WHERE [rowBatchId] = @batchId AND ([price] < 0 OR [price] IS NULL);
+
+        UPDATE [h5].[dimProduct_stg]
+        SET [name] = 'n/a'
+        WHERE [rowBatchId] = @batchId AND [name] IS NULL;
+
+        UPDATE [h5].[dimProduct_stg]
+        SET [category] = 'n/a'
+        WHERE [rowBatchId] = @batchId AND [category] IS NULL;
 
         -- Log errors to the error table (optional)
         INSERT INTO [h5].[errors] (
@@ -203,6 +213,38 @@ BEGIN
             'Invalid data: price is negative or NULL' AS [error]
         FROM [h5].[dimProduct_stg]
         WHERE [rowBatchId] = @batchId AND ([price] < 0 OR [price] IS NULL);
+
+        INSERT INTO [h5].[errors] (
+            [refTable],
+            [refColumn],
+            [refId],
+            [refRowBatchId],
+            [error]
+        )
+        SELECT
+            'dimProduct_stg' AS [refTable],
+            'name' AS [refColumn],
+            [id] AS [refId],
+            @batchId AS [refRowBatchId],
+            'Invalid data: name is NULL' AS [error]
+        FROM [h5].[dimProduct_stg]
+        WHERE [rowBatchId] = @batchId AND [name] IS NULL;
+
+        INSERT INTO [h5].[errors] (
+            [refTable],
+            [refColumn],
+            [refId],
+            [refRowBatchId],
+            [error]
+        )
+        SELECT
+            'dimProduct_stg' AS [refTable],
+            'category' AS [refColumn],
+            [id] AS [refId],
+            @batchId AS [refRowBatchId],
+            'Invalid data: category is NULL' AS [error]
+        FROM [h5].[dimProduct_stg]
+        WHERE [rowBatchId] = @batchId AND [category] IS NULL;
     END;
     MERGE INTO [h5].[dimProduct] TRG
     USING
