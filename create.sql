@@ -84,15 +84,23 @@ create unique index UIX_dimStores_rowBatchId on [h5].[dimStores] ([rowKey]);
 
 DROP TABLE IF EXISTS [h5].[dimCalender];
 CREATE TABLE [h5].[dimCalender] (
-    id int identity (1, 1),
-    rowKey nvarchar (200),
-    date date not null,
-    rowBatchId int not null,
-    rowCreated datetime not null default  getutcdate(),
-    rowModified datetime not null default getutcdate(),
-    CONSTRAINT  [pk_dimCalender] PRIMARY KEY CLUSTERED ([id])
+    datekey INT,
+    -- TODO rowkey nvarchar (200),
+    date DATE,
+    year INT,
+    monthNo INT,
+    monthName varchar(20),
+    YYYY_MM varchar(7),
+    week INT,
+    yearWeek varchar(7),
+    --OLD id int identity (1, 1),
+    --OLD date date not null,
+    -- TODO rowBatchId int not null,
+    -- TODO rowCreated datetime not null default  getutcdate(),
+    -- TODO rowModified datetime not null default getutcdate(),
+    CONSTRAINT  [pk_dimCalender] PRIMARY KEY CLUSTERED ([datekey]) -- ??
 );
-create unique index UIX_dimCalendar_rowBatchId on [h5].[dimCalender] ([rowKey]);
+create unique index UIX_dimCalendar_rowBatchId on [h5].[dimCalender] ([datekey]); -- ??
 
 DROP TABLE IF EXISTS [h5].[factInventory];
 CREATE TABLE [h5].[factInventory] (
