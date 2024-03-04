@@ -16,9 +16,9 @@ DROP TABLE IF EXISTS [h5].[dimStores_stg];
 CREATE TABLE [h5].[dimStores_stg] (
     id int identity (1, 1),
     rowKey nvarchar (200),
-    name nvarchar (50) not null,
-    city nvarchar (50) not null,
-    location nvarchar (50) not null,
+    name nvarchar (50),
+    city nvarchar (50),
+    location nvarchar (50),
     rowBatchId int not null,
     rowCreated datetime not null default  getutcdate(),
     CONSTRAINT  [pk_dimStores_stg] PRIMARY KEY CLUSTERED ([id])
@@ -310,6 +310,78 @@ CREATE PROCEDURE [h5].[dimStores_publish]
     @batchId int
 AS
     -- Quality check
+    IF EXISTS (
+        SELECT 1
+        FROM [h5].[dimStores_stg]
+        WHERE [rowBatchId] = @batchId
+              AND (
+                    [name] IS NULL
+                    OR [city] IS NULL
+                    OR [location] IS NULL
+                  )
+    )
+    BEGIN
+        UPDATE [h5].[dimStores_stg]
+        SET [name] = 'n/a'
+        WHERE [rowBatchId] = @batchId AND [name] IS NULL;
+
+        UPDATE [h5].[dimStores_stg]
+        SET [city] = 'n/a'
+        WHERE [rowBatchId] = @batchId AND [city] IS NULL;
+
+        UPDATE [h5].[dimStores_stg]
+        SET [location] = 'n/a'
+        WHERE [rowBatchId] = @batchId AND [location] IS NULL;
+
+        INSERT INTO [h5].[errors] (
+            [refTable],
+            [refColumn],
+            [refId],
+            [refRowBatchId],
+            [error]
+        )
+        SELECT
+            'dimStores_stg' AS [refTable],
+            'name' AS [refColumn],
+            [id] AS [refId],
+            @batchId AS [refRowBatchId],
+            'Invalid data: name is NULL' AS [error]
+        FROM [h5].[dimStores_stg]
+        WHERE [rowBatchId] = @batchId AND [name] IS NULL;
+
+        INSERT INTO [h5].[errors] (
+            [refTable],
+            [refColumn],
+            [refId],
+            [refRowBatchId],
+            [error]
+        )
+        SELECT
+            'dimStores_stg' AS [refTable],
+            'city' AS [refColumn],
+            [id] AS [refId],
+            @batchId AS [refRowBatchId],
+            'Invalid data: city is NULL' AS [error]
+        FROM [h5].[dimStores_stg]
+        WHERE [rowBatchId] = @batchId AND [city] IS NULL;
+
+        INSERT INTO [h5].[errors] (
+            [refTable],
+            [refColumn],
+            [refId],
+            [refRowBatchId],
+            [error]
+        )
+        SELECT
+            'dimStores_stg' AS [refTable],
+            'location' AS [refColumn],
+            [id] AS [refId],
+            @batchId AS [refRowBatchId],
+            'Invalid data: location is NULL' AS [error]
+        FROM [h5].[dimStores_stg]
+        WHERE [rowBatchId] = @batchId AND [location] IS NULL;
+
+    end
     MERGE INTO [h5].[dimStores] TRG
     USING
     (
