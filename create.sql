@@ -36,7 +36,7 @@ CREATE TABLE [h5].[factInventory_stg] (
     rowCreated datetime not null default  getutcdate(),
     CONSTRAINT  [pk_factInventory_stg] PRIMARY KEY CLUSTERED ([id])
 );
-create unique index UIX_factInventory_stg_rowBatchId on [h5].[factInventory_stg] ([rowBatchId]);
+create unique index UIX_factInventory_stg_rowBatchId on [h5].[factInventory_stg] ([rowBatchId], [rowKey]);
 
 DROP TABLE IF EXISTS [h5].[factSales_stg];
 CREATE TABLE [h5].[factSales_stg] (
@@ -51,7 +51,7 @@ CREATE TABLE [h5].[factSales_stg] (
     rowCreated datetime not null default  getutcdate(),
     CONSTRAINT  [pk_factSales_stg] PRIMARY KEY CLUSTERED ([id])
 );
-create unique index UIX_factSales_stg_rowBatchId on [h5].[factSales_stg] ([rowBatchId]);
+create unique index UIX_factSales_stg_rowBatchId on [h5].[factSales_stg] ([rowBatchId], [rowKey]);
 
 -- Tables
 
@@ -115,7 +115,7 @@ CREATE TABLE [h5].[factInventory] (
     rowCreated datetime not null default  getutcdate(),
     CONSTRAINT  [pk_factInventory] PRIMARY KEY CLUSTERED ([id])
 );
-create unique index UIX_factInventory_rowBatchId on [h5].[factInventory] ([rowBatchId]);
+create unique index UIX_factInventory_rowBatchId on [h5].[factInventory] ([rowKey]);
 
 DROP TABLE IF EXISTS [h5].[factSales];
 CREATE TABLE [h5].[factSales] (
@@ -130,7 +130,7 @@ CREATE TABLE [h5].[factSales] (
     rowCreated datetime not null default  getutcdate(),
     CONSTRAINT  [pk_factSales] PRIMARY KEY CLUSTERED ([id])
 );
-create unique index UIX_factSales_rowBatchId on [h5].[factSales] ([rowBatchId]);
+create unique index UIX_factSales_rowBatchId on [h5].[factSales] ([rowKey]);
 
 DROP TABLE IF EXISTS [h5].[errors];
 CREATE TABLE [h5].[errors] (
