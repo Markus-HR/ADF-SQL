@@ -42,7 +42,7 @@ DROP TABLE IF EXISTS [h5].[factSales_stg];
 CREATE TABLE [h5].[factSales_stg] (
     id int identity (1, 1),
     rowKey nvarchar (200),
-    idCalender int,
+    idCalender date,
     receipt nvarchar (20),
     idStore int,
     idProduct int,
@@ -514,13 +514,163 @@ BEGIN
     USING
     (
         SELECT
-            fs.[idCalender],
+            dc.datekey AS [idCalender],
             fs.[receipt],
             fs.[unitsSold],
             ds.id AS [idStore],  -- This is the new ID from dimStores
             dp.id AS [idProduct],  -- This is the new ID from dimProduct
             fs.[rowBatchId]
         FROM [h5].[factSales_stg] fs
+        LEFT JOIN [h5].[dimStores] ds ON fs.idStore = ds.id
+        LEFT JOIN [h5].[dimProduct] dp ON fs.idProduct = dp.id
+        LEFT JOIN [h5].[dimCalender] dc ON fs.[idCalender] = dc.[date]
+        WHERE fs.[rowBatchId] = @batchId
+    ) SRC
+    ON SRC.idCalender = TRG.idCalender
+    AND SRC.receipt = TRG.receipt
+    AND SRC.idStore = TRG.idStore
+    AND SRC.idProduct = TRG.idProduct
+    WHEN MATCHED THEN
+        UPDATE SET [idCalender] = SRC.[idCalender],
+                   [unitsSold] = SRC.[unitsSold],
+                   [rowBatchId] = SRC.[rowBatchId]
+    WHEN NOT MATCHED THEN
+        INSERT
+        (
+            [idCalender],
+            [receipt],
+            [unitsSold],
+            [idStore],
+            [idProduct],
+            [rowBatchId]
+        )
+        VALUES
+        (
+            SRC.[idCalender],
+            SRC.[receipt],
+            SRC.[unitsSold],
+            SRC.[idStore],  -- Inserting the new ID from dimStores
+            SRC.[idProduct],  -- Inserting the new ID from dimProduct
+            SRC.[rowBatchId]
+        );
+
+    SELECT dummyval = 2;
+    RETURN 1;
+END;
+
+go
+DROP PROCEDURE IF EXISTS [h5].[factSales_postprocess];
+go
+CREATE PROCEDURE [h5].[factSales_postprocess]
+    @BatchID int
+    AS
+    DELETE FROM [h5].[factSales_stg] WHERE rowBatchId = @BatchID;
+    select dummyval = 2
+    return 1
+go
+
+-- Inventory
+
+DROP PROCEDURE IF EXISTS [h5].[factInventory_publish];
+go
+
+CREATE PROCEDURE [h5].[factInventory_publish]
+    @batchId int
+AS
+BEGIN
+    -- Quality check
+    IF EXISTS (
+        SELECT 1
+        FROM [h5].[factInventory_stg] fs
+        LEFT JOIN [h5].[dimProduct] dp ON fs.idProduct = dp.id
+        LEFT JOIN [h5].[dimStores] ds ON fs.idStore = ds.id
+        WHERE fs.[rowBatchId] = @batchId
+              AND (
+                    dp.id IS NULL
+                    OR ds.id IS NULL
+                    OR fs.[inStock] IS NULL
+                    OR fs.[inStock] < 0
+                  )
+    )
+    BEGIN
+        -- Log errors to the error table (optional)
+        INSERT INTO [h5].[errors] (
+            [refTable],
+            [refColumn],
+            [refId],
+            [refRowBatchId],
+            [error]
+        )
+        SELECT
+            'factInventory_stg' AS [refTable],
+            'idProduct' AS [refColumn],
+            fs.[id] AS [refId],
+            @batchId AS [refRowBatchId],
+            'Invalid data: idProduct does not exist in dimProduct' AS [error]
+        FROM [h5].[factInventory_stg] fs
+        LEFT JOIN [h5].[dimProduct] dp ON fs.idProduct = dp.id
+        WHERE fs.[rowBatchId] = @batchId AND dp.id IS NULL;
+
+        INSERT INTO [h5].[errors] (
+            [refTable],
+            [refColumn],
+            [refId],
+            [refRowBatchId],
+            [error]
+        )
+        SELECT
+            'factInventory_stg' AS [refTable],
+            'idStore' AS [refColumn],
+            fs.[id] AS [refId],
+            @batchId AS [refRowBatchId],
+            'Invalid data: idStore does not exist in dimStores' AS [error]
+        FROM [h5].[factInventory_stg] fs
+        LEFT JOIN [h5].[dimStores] ds ON fs.idStore = ds.id
+        WHERE fs.[rowBatchId] = @batchId AND ds.id IS NULL;
+
+        INSERT INTO [h5].[errors] (
+            [refTable],
+            [refColumn],
+            [refId],
+            [refRowBatchId],
+            [error]
+        )
+        SELECT
+            'factInventory_stg' AS [refTable],
+            'unitsSold' AS [refColumn],
+            fs.[id] AS [refId],
+            @batchId AS [refRowBatchId],
+            'Invalid data: inStock is NULL' AS [error]
+        FROM [h5].[factInventory_stg] fs
+        WHERE fs.[rowBatchId] = @batchId AND fs.[inStock] IS NULL;
+
+        INSERT INTO [h5].[errors] (
+            [refTable],
+            [refColumn],
+            [refId],
+            [refRowBatchId],
+            [error]
+        )
+        SELECT
+            'factInventory_stg' AS [refTable],
+            'unitsSold' AS [refColumn],
+            fs.[id] AS [refId],
+            @batchId AS [refRowBatchId],
+            'Invalid data: inStock is less than 0' AS [error]
+        FROM [h5].[factInventory_stg] fs
+        WHERE fs.[rowBatchId] = @batchId AND fs.[inStock] < 0;
+
+    END;
+
+    MERGE INTO [h5].[factInventory] TRG
+    USING
+    (
+        SELECT
+            ds.id AS [idStore],
+            dp.id AS [idProduct],
+            fs.[inStock],
+            fs.[rowBatchId]
+        FROM [h5].[factInventory_stg] fs
         LEFT JOIN [h5].[dimStores] ds ON fs.idStore = ds.id
         LEFT JOIN [h5].[dimProduct] dp ON fs.idProduct = dp.id
         WHERE fs.[rowBatchId] = @batchId
@@ -558,12 +708,11 @@ BEGIN
 END;
 
 go
-DROP PROCEDURE IF EXISTS [h5].[dimStores_postprocess];
+DROP PROCEDURE IF EXISTS [h5].[factInventory_postprocess];
 go
-CREATE PROCEDURE [h5].[dimStores_postprocess]
+CREATE PROCEDURE [h5].[factInventory_postprocess]
     @BatchID int
     AS
-    DELETE FROM [h5].[dimStores_stg] WHERE rowBatchId = @BatchID;
+    DELETE FROM [h5].[factInventory_stg] WHERE rowBatchId = @BatchID;
     select dummyval = 2
     return 1
-go
