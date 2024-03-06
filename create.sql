@@ -132,6 +132,7 @@ CREATE TABLE [h5].[factSales] (
 );
 create unique index UIX_factSales_rowBatchId on [h5].[factSales] ([rowKey]);
 
+
 DROP TABLE IF EXISTS [h5].[errors];
 CREATE TABLE [h5].[errors] (
     id int identity (1, 1),
@@ -495,10 +496,6 @@ BEGIN
 
     END;
 
-    UPDATE [h5].[factSales_stg]
-    SET [idCalender] = '2021-04-08'
-    WHERE [rowBatchId] = @batchId AND [idCalender] IS NULL;
-
     MERGE INTO [h5].[factSales] TRG
     USING
     (
@@ -524,6 +521,7 @@ BEGIN
                           SRC.[idProduct] IS NOT NULL THEN
         INSERT
         (
+            [rowKey],
             [idCalender],
             [receipt],
             [unitsSold],
@@ -533,6 +531,7 @@ BEGIN
         )
         VALUES
         (
+            SRC.[rowKey],
             SRC.[idCalender],
             SRC.[receipt],
             SRC.[unitsSold],
@@ -563,87 +562,47 @@ GO
 CREATE PROCEDURE [h5].[factInventory_publish]
     @batchId int
 AS
-BEGIN
-    -- Assuming idProduct and idStore in factInventory_stg directly map to id in dimProduct and dimStores respectively
-    -- Quality check to identify invalid or missing entries
-    IF EXISTS (
-        SELECT 1
-        FROM [h5].[factInventory_stg] fi
-        LEFT JOIN [h5].[dimProduct] dp ON fi.idProduct = dp.id -- Corrected join condition
-        LEFT JOIN [h5].[dimStores] ds ON fi.idStore = ds.id -- Corrected join condition
-        WHERE fi.[rowBatchId] = @batchId
-              AND (
-                    dp.id IS NULL
-                    OR ds.id IS NULL
-                    OR fi.[inStock] IS NULL
-                    OR fi.[inStock] < 0
-                  )
-    )
-    BEGIN
-        -- Log errors for missing or invalid data
-        -- Adjusted to correctly reference the id column in dimProduct and dimStores
-        INSERT INTO [h5].[errors] (
-            [refTable],
-            [refColumn],
-            [refId],
-            [refRowBatchId],
-            [error]
-        )
-        SELECT
-            'factInventory_stg' AS [refTable],
-            CASE
-                WHEN dp.id IS NULL THEN 'idProduct'
-                WHEN ds.id IS NULL THEN 'idStore'
-                WHEN fi.[inStock] IS NULL THEN 'inStock'
-                WHEN fi.[inStock] < 0 THEN 'inStock'
-            END AS [refColumn],
-            fi.[id] AS [refId],
-            @batchId AS [refRowBatchId],
-            CASE
-                WHEN dp.id IS NULL THEN 'Invalid data: idProduct does not exist in dimProduct'
-                WHEN ds.id IS NULL THEN 'Invalid data: idStore does not exist in dimStores'
-                WHEN fi.[inStock] IS NULL THEN 'Invalid data: inStock is NULL'
-                WHEN fi.[inStock] < 0 THEN 'Invalid data: inStock is less than 0'
-            END AS [error]
-        FROM [h5].[factInventory_stg] fi
-        LEFT JOIN [h5].[dimProduct] dp ON fi.idProduct = dp.id
-        LEFT JOIN [h5].[dimStores] ds ON fi.idStore = ds.id
-        WHERE fi.[rowBatchId] = @batchId
-              AND (
-                    dp.id IS NULL
-                    OR ds.id IS NULL
-                    OR fi.[inStock] IS NULL
-                    OR fi.[inStock] < 0
-                  );
-    END
-    ELSE
+
     BEGIN
         -- Perform the merge operation with corrected join conditions
-        MERGE INTO [h5].[factInventory] AS TRG
-        USING
-        (
-            SELECT
-                fi.id AS rowKey,
-                fi.idStore,
-                fi.idProduct,
-                fi.inStock,
-                fi.rowBatchId
-            FROM [h5].[factInventory_stg] fi
-            WHERE fi.[rowBatchId] = @batchId
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM [h5].[errors]
-                  WHERE [refId] = fi.[id] AND [refRowBatchId] = @batchId
-              )
-        ) AS SRC
-        ON SRC.rowKey = TRG.id
-        WHEN NOT MATCHED THEN
-            INSERT (idStore, idProduct, inStock, rowBatchId)
-            VALUES (SRC.idStore, SRC.idProduct, SRC.inStock, SRC.rowBatchId);
-    END;
+    MERGE INTO [h5].[factInventory] TRG
+    USING
+    (
+        SELECT
+            fs.[rowKey],
+            fs.[inStock],
+            ds.id AS [idStore],
+            dp.id AS [idProduct],
+            fs.[rowBatchId]
+        FROM [h5].[factInventory_stg] fs
+        LEFT JOIN [h5].[dimStores] ds ON fs.idStore = ds.rowKey
+        LEFT JOIN [h5].[dimProduct] dp ON fs.idProduct = dp.rowKey
+        WHERE fs.[rowBatchId] = @batchId
+    ) SRC
+    ON SRC.rowKey = TRG.rowKey
 
-    -- Ensure a result is always returned to satisfy external services expectations
-    SELECT 'Data processing completed' AS Outcome;
+    WHEN NOT MATCHED  AND SRC.[idStore] IS NOT NULL AND
+                          SRC.[idProduct] IS NOT NULL THEN
+        INSERT
+        (
+            [rowKey],
+            [inStock],
+            [idStore],
+            [idProduct],
+            [rowBatchId]
+        )
+        VALUES
+        (
+            SRC.[rowKey],
+            SRC.[inStock],
+            SRC.[idStore],
+            SRC.[idProduct],
+            SRC.[rowBatchId]
+        );
+
+    SELECT dummyval = 2;
+    RETURN 1;
+
 END;
 GO
 
